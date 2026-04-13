@@ -31,7 +31,15 @@ serve(async (req: Request) => {
     }
 
     const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
-    if (!LOVABLE_API_KEY) throw new Error("LOVABLE_API_KEY is not configured");
+    if (!LOVABLE_API_KEY) {
+      console.error("LOVABLE_API_KEY is not configured in Supabase Edge Functions");
+      return new Response(JSON.stringify({
+        error: "AI service not configured. Please contact the administrator to set up the LOVABLE_API_KEY environment variable in Supabase Edge Functions."
+      }), {
+        status: 500,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
 
     const response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
       method: "POST",
