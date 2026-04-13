@@ -299,11 +299,14 @@ const Dashboard = () => {
 
   const sendChat = async () => {
     if (!chatInput.trim() || chatLoading) return;
+    setChatLoading(true);
     const userMsg: ChatMsg = { role: "user", content: chatInput };
     const allMessages = [...chatMessages, userMsg];
     setChatMessages(allMessages);
     setChatInput("");
     let assistantSoFar = "";
+
+    try {
       const resp = await fetch(CHAT_URL, {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}` },
