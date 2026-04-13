@@ -2,7 +2,13 @@
   "compilerOptions": {
     "allowJs": true,
     "lib": ["deno.window"],
-    "strict": true
+    "strict": true,
+    "types": ["https://deno.land/x/types/index.d.ts"]
   },
-  "importMap": "./import_map.json"
+  "importMap": "./import_map.json",
+  "fmt": {
+    "files": {
+      "include": ["**/*.ts"]
+    }
+  }
 }
