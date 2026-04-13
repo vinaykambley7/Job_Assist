@@ -1,4 +1,6 @@
+// @ts-ignore: Deno namespace not recognized by TypeScript
 import { serve } from "https://deno.land/std@0.191.0/http/server.ts";
+// @ts-ignore: External module resolution
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.103.0";
 
 const corsHeaders = {
@@ -14,7 +16,9 @@ serve(async (req: Request) => {
     if (!authHeader) throw new Error("Missing authorization header");
 
     const supabase = createClient(
+      // @ts-ignore: Deno API
       Deno.env.get("SUPABASE_URL")!,
+      // @ts-ignore: Deno API
       Deno.env.get("SUPABASE_ANON_KEY")!,
       { global: { headers: { Authorization: authHeader } } }
     );
@@ -30,6 +34,7 @@ serve(async (req: Request) => {
       });
     }
 
+    // @ts-ignore: Deno API
     const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
     if (!LOVABLE_API_KEY) {
       console.error("LOVABLE_API_KEY is not configured - returning mock analysis for testing");

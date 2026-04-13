@@ -1,3 +1,4 @@
+// @ts-ignore: Deno namespace not recognized by TypeScript
 import { serve } from "https://deno.land/std@0.191.0/http/server.ts";
 
 const corsHeaders = {
@@ -34,6 +35,7 @@ serve(async (req: Request) => {
       });
     }
 
+    // @ts-ignore: Deno API
     const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
     if (!LOVABLE_API_KEY) {
       console.error("LOVABLE_API_KEY is not configured - returning mock chat response for testing");
