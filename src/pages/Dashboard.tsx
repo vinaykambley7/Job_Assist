@@ -12,6 +12,9 @@ import { supabase } from "@/integrations/supabase/client";
 import logo from "@/assets/logo.png";
 import { mockJobs } from "@/data/mockData";
 import ReactMarkdown from "react-markdown";
+import { Database } from "@/integrations/supabase/types";
+
+type Application = Database['public']['Tables']['applications']['Row'];
 
 type ChatMsg = { role: "user" | "assistant"; content: string };
 
@@ -32,7 +35,7 @@ const Dashboard = () => {
   const { toast } = useToast();
 
   const [profile, setProfile] = useState<{ full_name: string | null; skills: string[]; resume_summary: string | null }>({ full_name: null, skills: [], resume_summary: null });
-  const [applications, setApplications] = useState<any[]>([]);
+  const [applications, setApplications] = useState<Application[]>([]);
   const [chatMessages, setChatMessages] = useState<ChatMsg[]>([]);
   const [chatInput, setChatInput] = useState("");
   const [chatLoading, setChatLoading] = useState(false);
@@ -46,28 +49,70 @@ const Dashboard = () => {
 
   useEffect(() => {
     if (!user || !session || loading) return;
-    supabase.from("profiles").select("*").eq("user_id", user.id).single().then(({ data }) => {
-      if (data) {
-        setProfile({ full_name: data.full_name, skills: data.skills || [], resume_summary: data.resume_summary });
-        if (data.skills?.length || data.resume_summary) {
-          setAnalysis({
-            skills: data.skills || [],
-            summary: data.resume_summary || "",
-            suggestions: [],
-            experience_level: "",
-            top_roles: [],
+
+    const loadUserData = async () => {
+      try {
+        // Load user profile
+        const { data: profileData, error: profileError } = await supabase
+          .from("profiles")
+          .select("*")
+          .eq("user_id", user.id)
+          .single();
+
+        if (profileError && profileError.code !== 'PGRST116') { // PGRST116 is "not found"
+          console.error("Profile load error:", profileError);
+        } else if (profileData) {
+          setProfile({
+            full_name: profileData.full_name,
+            skills: profileData.skills || [],
+            resume_summary: profileData.resume_summary
           });
+          if (profileData.skills?.length || profileData.resume_summary) {
+            setAnalysis({
+              skills: profileData.skills || [],
+              summary: profileData.resume_summary || "",
+              suggestions: [],
+              experience_level: "",
+              top_roles: [],
+            });
+          }
         }
+
+        // Load applications
+        const { data: applicationsData, error: applicationsError } = await supabase
+          .from("applications")
+          .select("*")
+          .eq("user_id", user.id)
+          .order("applied_at", { ascending: false });
+
+        if (applicationsError) {
+          console.error("Applications load error:", applicationsError);
+        } else {
+          setApplications(applicationsData || []);
+        }
+
+        // Load resume file
+        const { data: filesData, error: filesError } = await supabase.storage
+          .from("resumes")
+          .list(user.id);
+
+        if (filesError) {
+          console.error("Resume files load error:", filesError);
+        } else if (filesData && filesData.length > 0) {
+          setResumeFile(filesData[0].name);
+        }
+      } catch (error) {
+        console.error("Error loading user data:", error);
+        toast({
+          title: "Error loading data",
+          description: "There was an issue loading your profile data.",
+          variant: "destructive"
+        });
       }
-    });
-    supabase.from("applications").select("*").eq("user_id", user.id).order("applied_at", { ascending: false }).then(({ data }) => {
-      if (data) setApplications(data);
-    });
-    supabase.storage.from("resumes").list(user.id).then(({ data }) => {
-      if (data && data.length > 0) setResumeFile(data[0].name);
-    });
-    setChatMessages([{ role: "assistant", content: `Hi${user.user_metadata?.full_name ? ` ${user.user_metadata.full_name}` : ""}! I'm your AI Career Assistant. Ask me about resume tips, job search strategy, or interview prep!` }]);
-  }, [user, session, loading]);
+    };
+
+    loadUserData();
+  }, [user, session, loading, toast]);
 
   useEffect(() => { chatEndRef.current?.scrollIntoView({ behavior: "smooth" }); }, [chatMessages]);
 
@@ -114,8 +159,9 @@ const Dashboard = () => {
         resume_summary: result.summary,
       }));
       toast({ title: "Resume analyzed!", description: `Found ${result.skills.length} skills and ${result.suggestions.length} suggestions.` });
-    } catch (e: any) {
-      toast({ title: "Analysis failed", description: e.message, variant: "destructive" });
+    } catch (e: unknown) {
+      const error = e instanceof Error ? e : new Error('Unknown error');
+      toast({ title: "Analysis failed", description: error.message, variant: "destructive" });
     } finally {
       setAnalyzing(false);
     }
@@ -154,24 +200,54 @@ const Dashboard = () => {
 
   const handleResumeDelete = async () => {
     if (!user || !resumeFile) return;
-    await supabase.storage.from("resumes").remove([`${user.id}/${resumeFile}`]);
-    setResumeFile(null);
-    setAnalysis(null);
-    toast({ title: "Resume removed" });
+    try {
+      const { error } = await supabase.storage.from("resumes").remove([`${user.id}/${resumeFile}`]);
+      if (error) {
+        console.error("Error deleting resume:", error);
+        toast({ title: "Error", description: "Failed to delete resume. Please try again.", variant: "destructive" });
+        return;
+      }
+      setResumeFile(null);
+      setAnalysis(null);
+      toast({ title: "Resume removed" });
+    } catch (error: unknown) {
+      const err = error instanceof Error ? error : new Error('Unknown error');
+      console.error("Error deleting resume:", err);
+      toast({ title: "Error", description: "Failed to delete resume. Please try again.", variant: "destructive" });
+    }
   };
 
   const handleApply = async (job: typeof mockJobs[0]) => {
     if (!user) return;
-    const { error } = await supabase.from("applications").insert({
-      user_id: user.id, job_title: job.title, company: job.company,
-      location: job.location, match_score: job.match, status: "Applied",
-    });
-    if (error) {
-      toast({ title: "Error", description: error.message, variant: "destructive" });
-    } else {
+    try {
+      const { error } = await supabase.from("applications").insert({
+        user_id: user.id, job_title: job.title, company: job.company,
+        location: job.location, match_score: job.match, status: "Applied",
+      });
+      if (error) {
+        toast({ title: "Error", description: error.message, variant: "destructive" });
+        return;
+      }
+
       toast({ title: "Applied!", description: `You applied to ${job.title} at ${job.company}` });
-      const { data } = await supabase.from("applications").select("*").eq("user_id", user.id).order("applied_at", { ascending: false });
-      if (data) setApplications(data);
+
+      // Refresh applications list
+      const { data, error: fetchError } = await supabase
+        .from("applications")
+        .select("*")
+        .eq("user_id", user.id)
+        .order("applied_at", { ascending: false });
+
+      if (fetchError) {
+        console.error("Error refreshing applications:", fetchError);
+        // Don't show error toast for fetch failure, just log it
+      } else {
+        setApplications(data || []);
+      }
+    } catch (error: unknown) {
+      const err = error instanceof Error ? error : new Error('Unknown error');
+      console.error("Error applying to job:", err);
+      toast({ title: "Error", description: "Failed to apply to job. Please try again.", variant: "destructive" });
     }
   };
 
@@ -221,8 +297,9 @@ const Dashboard = () => {
           } catch { textBuffer = line + "\n" + textBuffer; break; }
         }
       }
-    } catch (e: any) {
-      toast({ title: "AI Error", description: e.message, variant: "destructive" });
+    } catch (e: unknown) {
+      const error = e instanceof Error ? e : new Error('Unknown error');
+      toast({ title: "AI Error", description: error.message, variant: "destructive" });
       setChatMessages((prev) => [...prev, { role: "assistant", content: "Sorry, I encountered an error. Please try again." }]);
     } finally { setChatLoading(false); }
   };
